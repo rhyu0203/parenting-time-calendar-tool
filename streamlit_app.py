@@ -1,17 +1,17 @@
+import io
+import json
+import calendar
 import streamlit as st
 import pandas as pd
 import calendar
+
 from datetime import date
 from dateutil.relativedelta import relativedelta
-import json
+
 from reportlab.lib.pagesizes import landscape, letter
 from reportlab.pdfgen import canvas
 from reportlab.lib import colors
 from reportlab.lib.units import inch
-import calendar
-from datetime import date
-from dateutil.relativedelta import relativedelta
-import io
 
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode
 
@@ -140,7 +140,7 @@ def month_dataframe(month_date):
     cal = calendar.Calendar(calendar.SUNDAY).monthdatescalendar(year, month)
     for i in range(len(cal)):
         for j in range(len(cal[i])):
-            if cal[i][j].month == month:
+            if cal[i][j].month == month and (cal[i][j] - start_date).days >= 0 and (cal[i][j] - start_date).days <= 730:
                 st.session_state.selectable_cells[table_id][f"{table_id}|{i}|{headers[j]}"] = True
             cal[i][j] = cal[i][j].day
     day = cal[-1][-1]
@@ -149,9 +149,9 @@ def month_dataframe(month_date):
     for i in range(6-len(cal)): 
         cal.append([day+7*i+j+1 for j in range(7)]) 
     
-
+    
     df = pd.DataFrame(cal, columns=headers)
-
+    cal = [headers] + cal
     return df, year, month, cal
 
 
@@ -204,7 +204,7 @@ def render_month(month_date):
         gridOptions=gb.build(),
         update_mode=GridUpdateMode.VALUE_CHANGED,
         allow_unsafe_jscode=True,
-        height=152,
+        height=153,
         key=table_id,
     )
     
@@ -221,21 +221,41 @@ def render_month(month_date):
         st.session_state.deselected_cells[table_id] = {}
     return selected_cells
 
+def selected_per_year(total_selected):
+    flattened_selectable = [i for j in selectable_cells.values() for i in j]
+    flattened_selected = [i for j in total_selected.values() for i in j]
+    year1 = 0
+    for s in flattened_selectable[:len(flattened_selectable)//2]:
+        if s in flattened_selected:
+            year1 += 1
+    year2 = 0
+    for s in flattened_selectable[len(flattened_selectable)//2:]:
+        if s in flattened_selected:
+            year2 += 1
+    return year1, year2
+
 # Draw one page of calendars
 def draw_calendar_page(c, start_date, num_months, selected_cells, show_title=False):
     width, height = landscape(letter)
-    margin = 0.5*inch
-    month_width = (width - 2*margin)/4
-    month_height = (height - 2*margin)/3
+    margin = inch
+    month_width = (width - 2*margin)/4*28/31
+    month_height = (height - 2*margin)/4*28/31
     start_x = margin
     start_y = height - margin
 
     # Title and author
     if show_title:
-        c.setFont("Helvetica-Bold", 24)
-        c.drawCentredString(width/2, start_y, "My 25-Month Calendar")
-        c.setFont("Helvetica", 16)
-        c.drawCentredString(width/2, start_y - 0.4*inch, "Author: John Doe")
+        year1, year2 = selected_per_year(selected_cells)
+        total = sum([len(v) for v in selected_cells.values()])
+        c.setFont("Times-Bold", 24)
+        c.drawString(start_x, start_y - 0.1*inch, "Parenting Time Calendar")
+        c.setFont("Times-Roman", 12)
+        c.drawString(start_x, start_y - 0.5*inch, f"Case: {name_of_case}")
+        c.drawString(start_x, start_y - 0.75*inch, f"Prepared by: {prepared_by}")
+        c.drawString(width - 3*inch, start_y , f"Total Dates Selected: {total}")
+        c.drawString(width - 3*inch, start_y - 0.25*inch, f"Year 1: {year1}")
+        c.drawString(width - 3*inch, start_y - 0.5*inch, f"Year 2: {year2}")
+        c.drawString(width - 3*inch, start_y - 0.75*inch, f"Yearly Average: {total/2}")
         offset_y = start_y - inch
     else:
         offset_y = start_y
@@ -248,11 +268,11 @@ def draw_calendar_page(c, start_date, num_months, selected_cells, show_title=Fal
 
         col_idx = i % 4
         row_idx = i // 4
-        x0 = start_x + col_idx * month_width
-        y0 = offset_y - row_idx * month_height
+        x0 = start_x + col_idx * month_width*31/28
+        y0 = offset_y - row_idx * month_height*31/28
 
         # Month title
-        c.setFont("Helvetica-Bold", 12)
+        c.setFont("Times-Bold", 12)
         c.drawCentredString(x0 + month_width/2, y0 - 0.2*inch, f"{calendar.month_name[month]} {year}")
 
         # Draw table
@@ -262,21 +282,29 @@ def draw_calendar_page(c, start_date, num_months, selected_cells, show_title=Fal
             for c_idx, day in enumerate(week):
                 cell_x = x0 + c_idx*cell_width
                 cell_y = y0 - 0.3*inch - r*cell_height
-                cell_id = f"{table_id}|{r}|{matrix[0][c_idx]}"
+                cell_id = f"{table_id}|{r-1}|{matrix[0][c_idx]}"
+                
                 if r > 0 and cell_id in selected_cells.get(table_id, {}):
                     c.setFillColor(colors.lightblue)
                     c.rect(cell_x, cell_y - cell_height, cell_width, cell_height, fill=1, stroke=0)
+                    c.setFillColor(colors.black)
+                elif r > 0 and cell_id not in selectable_cells.get(table_id, {}):
+                    c.setFillColor(colors.lightgrey)
+                else:
+                    c.setFillColor(colors.black)
+                    
                 # Draw borders
                 c.setStrokeColor(colors.black)
                 c.rect(cell_x, cell_y - cell_height, cell_width, cell_height, fill=0)
                 # Draw text
                 if r == 0:
                     text = str(day)
-                    c.setFont("Helvetica-Bold", 8)
+                    c.setFont("Times-Bold", 8)
                 else:
-                    text = str(day) if day != "" else ""
-                    c.setFont("Helvetica", 8)
+                    text = str(day)
+                    c.setFont("Times-Roman", 8)
                 c.drawCentredString(cell_x + cell_width/2, cell_y - cell_height + 2, text)
+                c.setFillColor(colors.black)
 
 def generate_pdf():
     buffer = io.BytesIO()
@@ -306,16 +334,7 @@ st.download_button(
 
 st.markdown("---")
 
-flattened_selectable = [i for j in selectable_cells.values() for i in j]
-flattened_selected = [i for j in selected_cells.values() for i in j]
-year1 = 0
-for s in flattened_selectable[:len(flattened_selectable)//2]:
-    if s in flattened_selected:
-        year1 += 1
-year2 = 0
-for s in flattened_selectable[len(flattened_selectable)//2:]:
-    if s in flattened_selected:
-        year2 += 1
+year1, year2 = selected_per_year(selected_cells)
 
 t1 = st.markdown(f"### Total Dates Selected: **{sum([len(v) for v in selected_cells.values()])}**")
 t2 = st.markdown(f"#### Year 1: **{year1}**")
@@ -338,16 +357,7 @@ for i in range(0, len(months), months_per_row):
             with row[j]:
                 total_selected = render_month(months[i + j])
 
-flattened_selectable = [i for j in selectable_cells.values() for i in j]
-flattened_selected = [i for j in total_selected.values() for i in j]
-year1 = 0
-for s in flattened_selectable[:len(flattened_selectable)//2]:
-    if s in flattened_selected:
-        year1 += 1
-year2 = 0
-for s in flattened_selectable[len(flattened_selectable)//2:]:
-    if s in flattened_selected:
-        year2 += 1
+year1, year2 = selected_per_year(total_selected)
 
 t1.markdown(f"### Total Dates Selected: **{sum([len(v) for v in total_selected.values()])}**")
 t2.markdown(f"#### Year 1: **{year1}**")
