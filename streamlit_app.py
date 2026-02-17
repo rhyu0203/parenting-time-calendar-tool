@@ -15,15 +15,6 @@ from reportlab.lib.units import inch
 
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode
 
-st.set_page_config(layout="wide")
-st.title("📅 Calendar Selector")
-start_date = st.date_input("Select starting date:", value=date.today(), format="MM/DD/YYYY")
-name_of_case = st.text_input("Name of case:")
-prepared_by = st.text_input("Prepared by:")  
-
-months = [start_date + relativedelta(months=i) for i in range(25)]
-calendar.setfirstweekday(calendar.SUNDAY)
-
 if "selected_cells" not in st.session_state:
     st.session_state.selected_cells = {}
 
@@ -39,14 +30,53 @@ if "auto_deselected_cells" not in st.session_state:
 if "selectable_cells" not in st.session_state:
     st.session_state.selectable_cells = {}
 
+if "all_calendars" not in st.session_state:
+    st.session_state.all_calendars = {}
+
+if "reset_counter" not in st.session_state:
+    st.session_state.reset_counter = 0
+
+if "last_start_date" not in st.session_state:
+    st.session_state.last_start_date = None
 
 session_states = [st.session_state.selected_cells, st.session_state.deselected_cells,
-    st.session_state.auto_selected_cells, st.session_state.auto_deselected_cells, st.session_state.selectable_cells]
+    st.session_state.auto_selected_cells, st.session_state.auto_deselected_cells, st.session_state.selectable_cells,
+    st.session_state.all_calendars, st.session_state.last_start_date]
+
+cell_states = session_states[:5]
 
 selected_cells, deselected_cells, auto_selected_cells, auto_deselected_cells, selectable_cells = st.session_state.selected_cells, st.session_state.deselected_cells, st.session_state.auto_selected_cells, st.session_state.auto_deselected_cells, st.session_state.selectable_cells  
+all_calendars = st.session_state.all_calendars
+
+start_date = st.date_input("Select starting date:", value=date.today(), format="MM/DD/YYYY")
+name_of_case = st.text_input("Name of case:")
+prepared_by = st.text_input("Prepared by:")  
+
+def clear_session():
+    st.session_state.reset_counter += 1
+    for i in cell_states:
+        i.clear()
+    st.session_state.last_start_date = None
+    st.rerun()
+
+print("current start",start_date)
+print("previous start",st.session_state.last_start_date)
+
+if st.session_state.last_start_date is None:
+    st.session_state.last_start_date = start_date
+elif start_date != st.session_state.last_start_date:
+    print("rerunning")
+    clear_session()
+    st.session_state.last_start_date = start_date
+
+months = [start_date + relativedelta(months=i) for i in range(25)]
+calendar.setfirstweekday(calendar.SUNDAY)
 
 cell_style_jscode = JsCode("""
 function(params) {
+    console.log("style");
+    console.log(params);
+    console.log(params.context.selectedCells);
     const tableId = params.context.tableId;
     const cellId = tableId + "|" + params.rowIndex + "|" + params.column.colId;
     const selectableCells = params.context.selectableCells;
@@ -55,20 +85,21 @@ function(params) {
     const selectableTextColor = "#000000";
     const unselectableTextColor = "#CCCCCC";
     const borderColor = "#000000";
-                           
-    if (!window.selectedCells) { window.selectedCells = {}; }
-    if (!window.selectedCells[tableId]) { window.selectedCells[tableId] = {}; }
-    if (!window.deselectedCells) { window.deselectedCells = {}; }
-    if (!window.deselectedCells[tableId]) { window.deselectedCells[tableId] = {}; }
-    if (!window.autoSelectedCells) { window.autoSelectedCells = {}; }
-    if (!window.autoSelectedCells[tableId]) { window.autoSelectedCells[tableId] = {}; }
-    if (!window.autoDeselectedCells) { window.autoDeselectedCells = {}; }
-    if (!window.autoDeselectedCells[tableId]) { window.autoDeselectedCells[tableId] = {}; }
     
-    let selectedCells = window.selectedCells[tableId];
-    let deselectedCells = window.deselectedCells[tableId];
-    let autoSelectedCells = window.autoSelectedCells[tableId];
-    let autoDeselectedCells = window.autoDeselectedCells[tableId];
+                           
+    if (!window.selectedCells) { window.selectedCells = params.context.selectedCells; }
+    //if (!window.selectedCells[tableId]) { window.selectedCells[tableId] = params.context.deselectedCells; }
+    if (!window.deselectedCells) { window.deselectedCells = params.context.deselectedCells; }
+    //if (!window.deselectedCells[tableId]) { window.deselectedCells[tableId] = {}; }
+    if (!window.autoSelectedCells) { window.autoSelectedCells = params.context.autoSelectedCells; }
+    //if (!window.autoSelectedCells[tableId]) { window.autoSelectedCells[tableId] = {}; }
+    if (!window.autoDeselectedCells) { window.autoDeselectedCells = params.context.autoDeselectedCells; }
+    //if (!window.autoDeselectedCells[tableId]) { window.autoDeselectedCells[tableId] = {}; }
+    
+    let selectedCells = window.selectedCells;
+    let deselectedCells = window.deselectedCells;
+    let autoSelectedCells = window.autoSelectedCells;
+    let autoDeselectedCells = window.autoDeselectedCells;
                            
     style = {border: borderColor, textAlign: 'center', backgroundColor: unselectedBackgroundColor, 
         color: selectableTextColor, borderRight: "1px solid "+borderColor,
@@ -88,19 +119,23 @@ onCellClickedHandler = JsCode("""
 function(params) {
     const tableId = params.context.tableId;
     const selectableCells = params.context.selectableCells;
-    if (!window.selectedCells) { window.selectedCells = {}; }
-    if (!window.selectedCells[tableId]) { window.selectedCells[tableId] = {}; }
-    if (!window.deselectedCells) { window.deselectedCells = {}; }
-    if (!window.deselectedCells[tableId]) { window.deselectedCells[tableId] = {}; }
-    if (!window.autoSelectedCells) { window.autoSelectedCells = {}; }
-    if (!window.autoSelectedCells[tableId]) { window.autoSelectedCells[tableId] = {}; }
-    if (!window.autoDeselectedCells) { window.autoDeselectedCells = {}; }
-    if (!window.autoDeselectedCells[tableId]) { window.autoDeselectedCells[tableId] = {}; }
+    console.log("click");
+    console.log(params);
+    console.log(params.context.selectedCells);
+    if (!window.selectedCells) { window.selectedCells = params.context.selectedCells; }
+    //if (!window.selectedCells[tableId]) { window.selectedCells[tableId] = params.context.deselectedCells; }
+    if (!window.deselectedCells) { window.deselectedCells = params.context.deselectedCells; }
+    //if (!window.deselectedCells[tableId]) { window.deselectedCells[tableId] = {}; }
+    if (!window.autoSelectedCells) { window.autoSelectedCells = params.context.autoSelectedCells; }
+    //if (!window.autoSelectedCells[tableId]) { window.autoSelectedCells[tableId] = {}; }
+    if (!window.autoDeselectedCells) { window.autoDeselectedCells = params.context.autoDeselectedCells; }
+    //if (!window.autoDeselectedCells[tableId]) { window.autoDeselectedCells[tableId] = {}; }
+                              
     
-    let selectedCells = window.selectedCells[tableId];
-    let deselectedCells = window.deselectedCells[tableId];
-    let autoSelectedCells = window.autoSelectedCells[tableId];
-    let autoDeselectedCells = window.autoDeselectedCells[tableId];
+    let selectedCells = window.selectedCells;
+    let deselectedCells = window.deselectedCells;
+    let autoSelectedCells = window.autoSelectedCells;
+    let autoDeselectedCells = window.autoDeselectedCells;
     console.log(selectedCells);
 
     const cellId = tableId + "|" + params.rowIndex + "|" + params.column.colId;
@@ -128,14 +163,15 @@ function(params) {
 }
 """)
 
-def month_dataframe(month_date):
+def month_dataframe(months, idx):
+    month_date = months[idx]
     year = month_date.year
     month = month_date.month
     headers = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
     table_id = f"grid-{year}-{month}"
-    for i in range(len(session_states)):
-        if table_id not in session_states[i]:
-            session_states[i][table_id] = {}
+    for i in range(len(cell_states)):
+        if table_id not in cell_states[i]:
+            cell_states[i][table_id] = {}
     
     cal = calendar.Calendar(calendar.SUNDAY).monthdatescalendar(year, month)
     for i in range(len(cal)):
@@ -148,6 +184,7 @@ def month_dataframe(month_date):
         day = 0
     for i in range(6-len(cal)): 
         cal.append([day+7*i+j+1 for j in range(7)]) 
+    all_calendars[table_id] = cal
     
     
     df = pd.DataFrame(cal, columns=headers)
@@ -155,8 +192,8 @@ def month_dataframe(month_date):
     return df, year, month, cal
 
 
-def render_month(month_date):
-    df, year, month, _ = month_dataframe(month_date)
+def render_month(months, idx):
+    df, year, month, _ = month_dataframe(months, idx)
 
     if "_hidden_column" not in df.columns:
         df["_hidden_column"] = ""
@@ -176,7 +213,11 @@ def render_month(month_date):
         suppressMovable=True,
         context={
             "tableId": table_id,
-            "selectableCells": st.session_state.selectable_cells[table_id],
+            "selectedCells": selected_cells[table_id],
+            "deselectedCells": deselected_cells[table_id],
+            "autoSelectedCells": auto_selected_cells[table_id], 
+            "autoDeselectedCells": auto_deselected_cells[table_id],
+            "selectableCells": selectable_cells[table_id],
             },
     )
 
@@ -205,7 +246,7 @@ def render_month(month_date):
         update_mode=GridUpdateMode.VALUE_CHANGED,
         allow_unsafe_jscode=True,
         height=153,
-        key=table_id,
+        key=f"{table_id}-{st.session_state.reset_counter}",
     )
     
     data = grid["data"]
@@ -225,12 +266,20 @@ def selected_per_year(total_selected):
     flattened_selectable = [i for j in selectable_cells.values() for i in j]
     flattened_selected = [i for j in total_selected.values() for i in j]
     year1 = 0
-    for s in flattened_selectable[:len(flattened_selectable)//2]:
-        if s in flattened_selected:
-            year1 += 1
     year2 = 0
-    for s in flattened_selectable[len(flattened_selectable)//2:]:
-        if s in flattened_selected:
+    weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+    weekdays_to_day = {weekdays[i]:i for i in range(7)}
+    for i in flattened_selected:
+        [table_id, r, c] = i.split("|")
+        r = int(r)+1
+        c = weekdays_to_day[c]
+        [year, month] = table_id.split('-')[1:]
+        year = int(year)
+        month = int(month)
+        selected_date = date(year=year, month=month,day=all_calendars[table_id][r-1][c])
+        if (selected_date - start_date).days < 365:
+            year1 += 1
+        else:
             year2 += 1
     return year1, year2
 
@@ -264,7 +313,7 @@ def draw_calendar_page(c, start_date, num_months, selected_cells, show_title=Fal
         month_date = start_date + relativedelta(months=i)
         year, month = month_date.year, month_date.month
         table_id = f"grid-{year}-{month}"
-        _,_,_,matrix = month_dataframe(months[i])
+        _,_,_,matrix = month_dataframe(months,i)
 
         col_idx = i % 4
         row_idx = i // 4
@@ -306,11 +355,9 @@ def draw_calendar_page(c, start_date, num_months, selected_cells, show_title=Fal
                 c.drawCentredString(cell_x + cell_width/2, cell_y - cell_height + 2, text)
                 c.setFillColor(colors.black)
 
-def generate_pdf():
+def generate_pdf(start_date):
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=landscape(letter))
-
-    start_date = date.today()
 
     # Front page: first 12 months with title
     draw_calendar_page(c, start_date, 12, selected_cells, show_title=True)
@@ -325,9 +372,13 @@ def generate_pdf():
     buffer.seek(0)
     return buffer.getvalue()
 
+st.set_page_config(layout="wide")
+st.title("📅 Calendar Selector")
+
+
 st.download_button(
     label="Download PDF",
-    data=generate_pdf(),
+    data=generate_pdf(start_date),
     file_name="calendar_selection.pdf",
     icon=":material/picture_as_pdf:",
 )
@@ -335,6 +386,7 @@ st.download_button(
 st.markdown("---")
 
 year1, year2 = selected_per_year(selected_cells)
+st.write(selected_cells)
 
 t1 = st.markdown(f"### Total Dates Selected: **{sum([len(v) for v in selected_cells.values()])}**")
 t2 = st.markdown(f"#### Year 1: **{year1}**")
@@ -345,9 +397,7 @@ st.markdown("---")
 
 # Clear button
 if st.button("Clear All Selections"):
-    st.session_state.selected_cells.clear()
-    st.session_state.deselected_cells.clear()
-    st.rerun()
+    clear_session()
 
 months_per_row = 4
 for i in range(0, len(months), months_per_row):
@@ -355,15 +405,16 @@ for i in range(0, len(months), months_per_row):
     for j in range(months_per_row):
         if i + j < len(months):
             with row[j]:
-                total_selected = render_month(months[i + j])
+                selected_cells = render_month(months, i + j)
 
-year1, year2 = selected_per_year(total_selected)
 
-t1.markdown(f"### Total Dates Selected: **{sum([len(v) for v in total_selected.values()])}**")
+year1, year2 = selected_per_year(selected_cells)
+st.write(selected_cells)
+
+t1.markdown(f"### Total Dates Selected: **{sum([len(v) for v in selected_cells.values()])}**")
 t2.markdown(f"#### Year 1: **{year1}**")
 t3.markdown(f"#### Year 2: **{year2}**")
-t4.markdown(f"#### Yearly Average: **{sum([len(v) for v in total_selected.values()])/2}**")
-
+t4.markdown(f"#### Yearly Average: **{sum([len(v) for v in selected_cells.values()])/2}**")
 
 
 
