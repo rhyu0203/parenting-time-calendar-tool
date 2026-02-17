@@ -59,13 +59,9 @@ def clear_session():
     st.session_state.last_start_date = None
     st.rerun()
 
-print("current start",start_date)
-print("previous start",st.session_state.last_start_date)
-
 if st.session_state.last_start_date is None:
     st.session_state.last_start_date = start_date
 elif start_date != st.session_state.last_start_date:
-    print("rerunning")
     clear_session()
     st.session_state.last_start_date = start_date
 
@@ -386,7 +382,6 @@ st.download_button(
 st.markdown("---")
 
 year1, year2 = selected_per_year(selected_cells)
-st.write(selected_cells)
 
 t1 = st.markdown(f"### Total Dates Selected: **{sum([len(v) for v in selected_cells.values()])}**")
 t2 = st.markdown(f"#### Year 1: **{year1}**")
@@ -409,7 +404,6 @@ for i in range(0, len(months), months_per_row):
 
 
 year1, year2 = selected_per_year(selected_cells)
-st.write(selected_cells)
 
 t1.markdown(f"### Total Dates Selected: **{sum([len(v) for v in selected_cells.values()])}**")
 t2.markdown(f"#### Year 1: **{year1}**")
